@@ -54,7 +54,7 @@ func MarshalOnePayload(w io.Writer, model interface{}) error {
 func MarshalOnePayloadWithoutIncluded(w io.Writer, model interface{}) error {
 	included := make(map[string]*Node)
 
-	rootNode, err := visitModelNode(model, &included, true)
+	rootNode, err := visitModelNode(model, &included, true, true, nil)
 	if err != nil {
 		return err
 	}
@@ -70,9 +70,13 @@ func MarshalOnePayloadWithoutIncluded(w io.Writer, model interface{}) error {
 // payload and doesn't write out results. Useful is you use your JSON rendering
 // library.
 func MarshalOne(model interface{}) (*OnePayload, error) {
+	return mOne(model, nil)
+}
+
+func mOne(model interface{}, si ServerInformation) (*OnePayload, error) {
 	included := make(map[string]*Node)
 
-	rootNode, err := visitModelNode(model, &included, true)
+	rootNode, err := visitModelNode(model, &included, true, true, si)
 	if err != nil {
 		return nil, err
 	}
@@ -155,13 +159,17 @@ func MarshalManyPayload(w io.Writer, models interface{}) error {
 // payload and doesn't write out results. Useful is you use your JSON rendering
 // library.
 func MarshalMany(models []interface{}) (*ManyPayload, error) {
+	return mMany(models, nil)
+}
+
+func mMany(models []interface{}, si ServerInformation) (*ManyPayload, error) {
 	payload := &ManyPayload{
 		Data: []*Node{},
 	}
 	included := map[string]*Node{}
 
 	for _, model := range models {
-		node, err := visitModelNode(model, &included, true)
+		node, err := visitModelNode(model, &included, true, true, si)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +194,7 @@ func MarshalMany(models []interface{}) (*ManyPayload, error) {
 //
 // model interface{} should be a pointer to a struct.
 func MarshalOnePayloadEmbedded(w io.Writer, model interface{}) error {
-	rootNode, err := visitModelNode(model, nil, false)
+	rootNode, err := visitModelNode(model, nil, false, true, nil)
 	if err != nil {
 		return err
 	}
@@ -219,7 +227,7 @@ func isEmptyValue(v reflect.Value) bool {
 }
 
 func visitModelNode(model interface{}, included *map[string]*Node,
-	sideload bool) (*Node, error) {
+	sideload, top bool, si ServerInformation) (*Node, error) {
 	node := new(Node)
 
 	var er error
@@ -389,6 +397,14 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 			var relLinks *Links
 			if linkableModel, ok := model.(RelationshipLinkable); ok {
 				relLinks = linkableModel.JSONAPIRelationshipLinks(args[1])
+			} else if si != nil {
+				if rL, ok := model.(SIRelationshipLinkable); ok {
+					jl := rL.RelationshipLinksWithSI(args[1], si)
+					if er := jl.validate(); er != nil {
+						return nil, er
+					}
+					node.Links = jl
+				}
 			}
 
 			var relMeta *Meta
@@ -402,6 +418,7 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 					fieldValue,
 					included,
 					sideload,
+					si,
 				)
 				if err != nil {
 					er = err
@@ -438,6 +455,8 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 					fieldValue.Interface(),
 					included,
 					sideload,
+					false,
+					si,
 				)
 				if err != nil {
 					er = err
@@ -476,6 +495,14 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 			return nil, er
 		}
 		node.Links = linkableModel.JSONAPILinks()
+	} else if !top && si != nil {
+		if siLink, isLinkable := model.(SILinkable); isLinkable {
+			jl := siLink.LinksWithSI(si)
+			if er := jl.validate(); er != nil {
+				return nil, er
+			}
+			node.Links = jl
+		}
 	}
 
 	if metableModel, ok := model.(Metable); ok {
@@ -493,13 +520,13 @@ func toShallowNode(node *Node) *Node {
 }
 
 func visitModelNodeRelationships(models reflect.Value, included *map[string]*Node,
-	sideload bool) (*RelationshipManyNode, error) {
+	sideload bool, si ServerInformation) (*RelationshipManyNode, error) {
 	nodes := []*Node{}
 
 	for i := 0; i < models.Len(); i++ {
 		n := models.Index(i).Interface()
 
-		node, err := visitModelNode(n, included, sideload)
+		node, err := visitModelNode(n, included, sideload, false, si)
 		if err != nil {
 			return nil, err
 		}
