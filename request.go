@@ -419,7 +419,8 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 			}
 
 			// Field was a Pointer type
-			if fieldValue.Kind() == reflect.Ptr {
+			k := fieldValue.Kind()
+			if k == reflect.Ptr {
 				var concreteVal reflect.Value
 
 				switch cVal := val.(type) {
@@ -434,7 +435,15 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 				case uintptr:
 					concreteVal = reflect.ValueOf(&cVal)
 				default:
-					return ErrUnsupportedPtrType
+					t := fieldValue.Type().Elem()
+					if t.Kind() != reflect.Struct {
+						return ErrUnsupportedPtrType
+					}
+					var err error
+					concreteVal, err = unmarshalStruct(val, t)
+					if err != nil {
+						return err
+					}
 				}
 
 				if fieldValue.Type() != concreteVal.Type() {
@@ -443,10 +452,17 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 
 				fieldValue.Set(concreteVal)
 				continue
+			} else if k == reflect.Struct {
+				v, err := unmarshalStruct(val, fieldValue.Type())
+				if err != nil {
+					return err
+				}
+				fieldValue.Set(v.Elem())
+				continue
 			}
 
 			// As a final catch-all, ensure types line up to avoid a runtime panic.
-			if fieldValue.Kind() != v.Kind() {
+			if k != v.Kind() {
 				return ErrInvalidType
 			}
 			fieldValue.Set(reflect.ValueOf(val))
@@ -527,6 +543,19 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 	}
 
 	return er
+}
+
+func unmarshalStruct(v interface{}, t reflect.Type) (reflect.Value, error) {
+	vv := reflect.New(t)
+	b, err := json.Marshal(v)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	err = json.Unmarshal(b, vv.Interface())
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	return vv, err
 }
 
 func fullNode(n *Node, included *map[string]*Node) *Node {

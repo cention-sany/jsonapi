@@ -404,7 +404,7 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 						if er := jl.validate(); er != nil {
 							return nil, er
 						}
-						node.Links = jl
+						relLinks = jl
 					}
 				}
 			}
