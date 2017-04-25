@@ -400,10 +400,12 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 			} else if si != nil {
 				if rL, ok := model.(SIRelationshipLinkable); ok {
 					jl := rL.RelationshipLinksWithSI(args[1], si)
-					if er := jl.validate(); er != nil {
-						return nil, er
+					if jl != nil {
+						if er := jl.validate(); er != nil {
+							return nil, er
+						}
+						node.Links = jl
 					}
-					node.Links = jl
 				}
 			}
 
@@ -498,10 +500,12 @@ func visitModelNode(model interface{}, included *map[string]*Node,
 	} else if !top && si != nil {
 		if siLink, isLinkable := model.(SILinkable); isLinkable {
 			jl := siLink.LinksWithSI(si)
-			if er := jl.validate(); er != nil {
-				return nil, er
+			if jl != nil {
+				if er := jl.validate(); er != nil {
+					return nil, er
+				}
+				node.Links = jl
 			}
-			node.Links = jl
 		}
 	}
 
