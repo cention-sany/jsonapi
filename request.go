@@ -440,7 +440,7 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 						return ErrUnsupportedPtrType
 					}
 					var err error
-					concreteVal, err = unmarshalStruct(val, t)
+					concreteVal, err = unmarshalAgain(val, t)
 					if err != nil {
 						return err
 					}
@@ -452,8 +452,8 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 
 				fieldValue.Set(concreteVal)
 				continue
-			} else if k == reflect.Struct {
-				v, err := unmarshalStruct(val, fieldValue.Type())
+			} else if k == reflect.Struct || k == reflect.Slice {
+				v, err := unmarshalAgain(val, fieldValue.Type())
 				if err != nil {
 					return err
 				}
@@ -545,7 +545,9 @@ func unmarshalNode(data *Node, model reflect.Value, included *map[string]*Node) 
 	return er
 }
 
-func unmarshalStruct(v interface{}, t reflect.Type) (reflect.Value, error) {
+// unmarshalAgain is helper func to marshal v (which was unmarshaled) then
+// unmarshal again to t type.
+func unmarshalAgain(v interface{}, t reflect.Type) (reflect.Value, error) {
 	vv := reflect.New(t)
 	b, err := json.Marshal(v)
 	if err != nil {
